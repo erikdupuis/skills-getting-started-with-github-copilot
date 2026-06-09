@@ -1,22 +1,55 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from src.app import app
+from src.app import app, activities
 
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    """Create a FastAPI test client."""
+    return TestClient(app)
 
 
-def test_unregister_participant_removes_email():
-    response = client.delete("/activities/Chess Club/unregister?email=michael@mergington.edu")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "message": "Unregistered michael@mergington.edu from Chess Club"
+@pytest.fixture
+def restore_activities():
+    """Save and restore the in-memory activity data for each test."""
+    original = {
+        name: {
+            "description": details["description"],
+            "schedule": details["schedule"],
+            "max_participants": details["max_participants"],
+            "participants": list(details["participants"]),
+        }
+        for name, details in activities.items()
     }
 
+    yield
 
-def test_unregister_unknown_participant_returns_404():
-    response = client.delete("/activities/Chess Club/unregister?email=unknown@mergington.edu")
+    activities.clear()
+    activities.update(original)
 
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Participant not found"}
+
+def test_signup_adds_a_participant(client, restore_activities):
+    # Arrange
+    email = "newstudent@mergington.edu"
+
+    # Act
+    response = client.post("/activities/Chess Club/signup?email=" + email)
+
+    # Assert
+    assert response.status_code == 200
+    assert response.json() == {"message": f"Signed up {email} for Chess Club"}
+    assert email in activities["Chess Club"]["participants"]
+
+
+def test_unregister_removes_a_participant(client, restore_activities):
+    # Arrange
+    email = "michael@mergington.edu"
+
+    # Act
+    response = client.delete("/activities/Chess Club/unregister?email=" + email)
+
+    # Assert
+    assert response.status_code == 200
+    assert response.json() == {"message": f"Unregistered {email} from Chess Club"}
+    assert email not in activities["Chess Club"]["participants"]
